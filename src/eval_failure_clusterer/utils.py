@@ -65,7 +65,10 @@ def shingle_tokens(text: str, size: int = 3) -> List[str]:
 
 
 def hamming_distance(left: int, right: int) -> int:
-    return (left ^ right).bit_count()
+    value = left ^ right
+    if hasattr(value, "bit_count"):
+        return value.bit_count()
+    return bin(value).count("1")
 
 
 def similarity_from_distance(left: int, right: int, bits: int = 64) -> float:
