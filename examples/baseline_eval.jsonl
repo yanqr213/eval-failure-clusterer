@@ -1,0 +1,10 @@
+{"id":"qa-001","status":"pass","model":"gpt-lite","tags":["retrieval","zh"],"output":"Paris [ref]","latency_ms":910,"cost_usd":0.017}
+{"id":"qa-002","passed":true,"model":"gpt-lite","tags":["retrieval","en"],"output":"Paris [1]","latency_ms":820,"cost_usd":0.018}
+{"id":"qa-003","status":"pass","model":"gpt-pro","tags":"reasoning;math","output":"42","latency_ms":1300,"cost_usd":0.028}
+{"id":"qa-004","status":"pass","model":"gpt-pro","tags":"reasoning;math","output":"13","latency_ms":1290,"cost_usd":0.027}
+{"id":"qa-005","status":"fail","model":"gpt-lite","tags":"json;tool-use","error":"JSON parse error at line 1 column 10","output":"{\"action\": search bad}","latency_ms":960,"cost_usd":0.015}
+{"id":"qa-006","status":"pass","model":"gpt-lite","tags":"json;tool-use","output":"{\"tool\":\"lookup\",\"query\":\"weather\"}","latency_ms":940,"cost_usd":0.015}
+{"id":"qa-007","status":"pass","model":"gpt-ultra","tags":"safety;policy","output":"Allowed answer.","latency_ms":740,"cost_usd":0.059}
+{"id":"qa-008","status":"pass","model":"gpt-ultra","tags":"safety;policy","output":"Safe allowed answer with concise policy framing.","latency_ms":780,"cost_usd":0.061}
+{"id":"qa-009","status":"pass","model":"gpt-lite","tags":"retrieval;latency","output":"Fetched answer with citation.","latency_ms":1500,"cost_usd":0.019}
+{"id":"qa-010","status":"pass","model":"gpt-lite","tags":"cost","output":"Answer is correct and affordable.","latency_ms":880,"cost_usd":0.022}

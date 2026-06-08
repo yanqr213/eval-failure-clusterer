@@ -1,0 +1,4 @@
+case_id,status,model,tags,error,output,latency_ms,cost_usd
+csv-001,fail,gpt-lite,"retrieval;zh",Expected citation field missing,The answer is Paris without citation,1450,0.022
+csv-002,pass,gpt-lite,"retrieval;en",,Paris [1],810,0.018
+csv-003,fail,gpt-pro,"json;tool-use",JSON parse error at line 1 column 7,"{tool: search}",1000,0.016
