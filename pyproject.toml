@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eval-failure-clusterer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Offline CLI for clustering AI eval failures and generating actionable reports."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -30,6 +30,12 @@ classifiers = [
 
 [project.scripts]
 eval-failure-clusterer = "eval_failure_clusterer.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yanqr213/eval-failure-clusterer"
+Repository = "https://github.com/yanqr213/eval-failure-clusterer"
+Issues = "https://github.com/yanqr213/eval-failure-clusterer/issues"
+Changelog = "https://github.com/yanqr213/eval-failure-clusterer/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

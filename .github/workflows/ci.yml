@@ -22,5 +22,7 @@ jobs:
       - name: CLI smoke test
         run: |
           eval-failure-clusterer cluster examples/eval_results.jsonl --output build/cluster
+          eval-failure-clusterer cluster examples/eval_results.jsonl --format sarif --output build/sarif
+          python -m json.tool build/sarif/clusters.sarif > /dev/null
           eval-failure-clusterer compare examples/baseline_eval.jsonl examples/eval_results.jsonl --output build/compare
           eval-failure-clusterer check examples/eval_results.jsonl --output build/check --check error || test $? -eq 2

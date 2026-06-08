@@ -23,7 +23,7 @@ LLM 应用的 eval 结果往往分散在 JSONL、CSV、CI artifact、日志导�
 - 检测延迟和成本异常。
 - 与 baseline 对比回归和改善。
 - 计算修复优先级。
-- 导出 Markdown / JSON / CSV / JUnit 报告。
+- 导出 brief / Markdown / JSON / CSV / JUnit / SARIF 报告。
 - 生成样例包，便于修复和复现。
 - 支持 CI gate，返回 warning 或 error。
 
@@ -76,6 +76,7 @@ qa-003,fail,gpt-pro,"reasoning;math",Assertion failed: missing final answer,"Lon
 
 ```bash
 eval-failure-clusterer cluster examples/eval_results.jsonl --output outputs/demo
+eval-failure-clusterer cluster examples/eval_results.jsonl --format brief,sarif --output outputs/triage
 eval-failure-clusterer sample examples/eval_results.jsonl --output outputs/demo/samples --max-per-cluster 2
 eval-failure-clusterer compare examples/baseline_eval.jsonl examples/eval_results.jsonl --output outputs/demo/compare
 eval-failure-clusterer check examples/eval_results.jsonl --output outputs/demo/check --check error
@@ -86,15 +87,19 @@ eval-failure-clusterer check examples/eval_results.jsonl --output outputs/demo/c
 ### `cluster`
 
 ```bash
-eval-failure-clusterer cluster INPUT [--config config.json] [--output DIR] [--format markdown,json,csv,junit]
+eval-failure-clusterer cluster INPUT [--config config.json] [--output DIR] [--format brief,markdown,json,csv,junit,sarif]
 ```
 
 输出：
 
+- `brief.md`
 - `summary.md`
 - `clusters.json`
 - `clusters.csv`
 - `junit.xml`
+- `clusters.sarif`
+
+`brief.md` 适合直接贴到 PR、Slack 或交给 Codex/Claude Code，内容包含决策、失败率、Top cluster、样例 case id 和下一步建议。`clusters.sarif` 可上传到 GitHub Code Scanning 或其他支持 SARIF 2.1.0 的质量平台。
 
 ### `sample`
 
@@ -155,6 +160,9 @@ eval-failure-clusterer check INPUT [--config config.json] [--output DIR] [--chec
 ```yaml
 name: eval-gate
 on: [push, pull_request]
+permissions:
+  contents: read
+  security-events: write
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -165,6 +173,11 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install .
       - run: eval-failure-clusterer check examples/eval_results.jsonl --check error --output build/eval-check
+      - run: eval-failure-clusterer cluster examples/eval_results.jsonl --format sarif --output build/eval-sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: build/eval-sarif/clusters.sarif
 ```
 
 ## 隐私与安全
@@ -195,8 +208,18 @@ Main commands:
 
 Typical outputs:
 
+- Brief triage summary for PR comments and agent handoff
 - Markdown summary for humans
 - JSON / CSV for downstream tooling
 - JUnit XML for CI dashboards
+- SARIF 2.1.0 for GitHub Code Scanning
 
 See `examples/` for runnable sample data.
+
+Example:
+
+```bash
+eval-failure-clusterer cluster examples/eval_results.jsonl \
+  --format brief,markdown,json,csv,junit,sarif \
+  --output outputs/eval-triage
+```

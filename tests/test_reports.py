@@ -7,7 +7,14 @@ from eval_failure_clusterer.analyzer import analyze_records
 from eval_failure_clusterer.compare import compare_analysis
 from eval_failure_clusterer.config import load_config
 from eval_failure_clusterer.parser import load_records
-from eval_failure_clusterer.reports import write_check_report, write_cluster_reports, write_compare_reports, write_sample_reports
+from eval_failure_clusterer.reports import (
+    cluster_sarif_payload,
+    render_cluster_brief,
+    write_check_report,
+    write_cluster_reports,
+    write_compare_reports,
+    write_sample_reports,
+)
 from eval_failure_clusterer.sampling import export_samples
 
 
@@ -20,9 +27,29 @@ class ReportTests(unittest.TestCase):
 
     def test_write_cluster_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
-            paths = write_cluster_reports(self.result, tmp, ["markdown", "json", "csv", "junit"])
-            self.assertEqual(len(paths), 4)
+            paths = write_cluster_reports(self.result, tmp, ["brief", "markdown", "json", "csv", "junit", "sarif"])
+            self.assertEqual(len(paths), 6)
+            self.assertTrue((Path(tmp) / "brief.md").exists())
             self.assertTrue((Path(tmp) / "summary.md").exists())
+            self.assertTrue((Path(tmp) / "clusters.sarif").exists())
+
+    def test_render_cluster_brief_contains_handoff(self):
+        brief = render_cluster_brief(self.result)
+
+        self.assertIn("# Eval Failure Triage Brief", brief)
+        self.assertIn("Decision:", brief)
+        self.assertIn("Agent handoff:", brief)
+
+    def test_cluster_sarif_payload_shape(self):
+        payload = cluster_sarif_payload(self.result, source_uri="fixtures/eval.jsonl")
+
+        self.assertEqual(payload["version"], "2.1.0")
+        run = payload["runs"][0]
+        self.assertEqual(run["tool"]["driver"]["name"], "eval-failure-clusterer")
+        self.assertTrue(run["results"])
+        self.assertEqual(run["results"][0]["ruleId"], "eval-failure-cluster")
+        uri = run["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        self.assertEqual(uri, "fixtures/eval.jsonl")
 
     def test_write_compare_reports(self):
         with tempfile.TemporaryDirectory() as tmp:

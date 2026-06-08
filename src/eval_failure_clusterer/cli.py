@@ -27,8 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     cluster_parser.add_argument("--output", default="outputs/cluster", help="Directory for generated reports")
     cluster_parser.add_argument(
         "--format",
-        default="markdown,json,csv,junit",
-        help="Comma-separated output formats: markdown,json,csv,junit",
+        default="brief,markdown,json,csv,junit",
+        help="Comma-separated output formats: brief,markdown,json,csv,junit,sarif",
     )
     cluster_parser.set_defaults(func=run_cluster)
 
@@ -71,7 +71,7 @@ def load_analysis(input_path: str, config_path: Optional[str]):
 def run_cluster(args: argparse.Namespace) -> int:
     result, _ = load_analysis(args.input, args.config)
     formats = [item.strip() for item in args.format.split(",") if item.strip()]
-    write_cluster_reports(result, args.output, formats)
+    write_cluster_reports(result, args.output, formats, source_uri=Path(args.input).as_posix())
     print(f"Clustered {result.metrics.failed} failures into {len(result.clusters)} clusters at {Path(args.output)}")
     return 0
 

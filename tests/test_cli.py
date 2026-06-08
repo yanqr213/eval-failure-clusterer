@@ -22,7 +22,7 @@ class CLITests(unittest.TestCase):
     def test_version(self):
         result = self.run_cli("--version")
         self.assertEqual(result.returncode, 0)
-        self.assertIn("eval-failure-clusterer 0.1.0", result.stdout)
+        self.assertIn("eval-failure-clusterer 0.2.0", result.stdout)
 
     def test_init_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -35,7 +35,24 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = self.run_cli("cluster", "examples/eval_results.jsonl", "--output", str(Path(tmp) / "cluster"))
             self.assertEqual(result.returncode, 0)
+            self.assertTrue((Path(tmp) / "cluster" / "brief.md").exists())
             self.assertTrue((Path(tmp) / "cluster" / "clusters.json").exists())
+
+    def test_cluster_sarif_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_cli(
+                "cluster",
+                "examples/eval_results.jsonl",
+                "--output",
+                str(Path(tmp) / "cluster"),
+                "--format",
+                "sarif",
+            )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads((Path(tmp) / "cluster" / "clusters.sarif").read_text(encoding="utf-8"))
+            self.assertEqual(payload["version"], "2.1.0")
+            uri = payload["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+            self.assertEqual(uri, "examples/eval_results.jsonl")
 
     def test_sample_command(self):
         with tempfile.TemporaryDirectory() as tmp:

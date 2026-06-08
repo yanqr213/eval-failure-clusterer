@@ -12,10 +12,17 @@ from .models import AnalysisResult, CompareResult
 from .utils import ensure_output_dir, format_percent
 
 
-def write_cluster_reports(result: AnalysisResult, output_dir: str, formats: Iterable[str]) -> List[Path]:
+def write_cluster_reports(
+    result: AnalysisResult,
+    output_dir: str,
+    formats: Iterable[str],
+    source_uri: str = "eval-results",
+) -> List[Path]:
     target = ensure_output_dir(output_dir)
     written: List[Path] = []
     normalized_formats = {item.strip().lower() for item in formats}
+    if "brief" in normalized_formats:
+        written.append(write_text(target / "brief.md", render_cluster_brief(result)))
     if "markdown" in normalized_formats:
         written.append(write_text(target / "summary.md", render_cluster_markdown(result)))
     if "json" in normalized_formats:
@@ -30,6 +37,8 @@ def write_cluster_reports(result: AnalysisResult, output_dir: str, formats: Iter
         written.append(write_clusters_csv(target / "clusters.csv", result))
     if "junit" in normalized_formats:
         written.append(write_junit(target / "junit.xml", result))
+    if "sarif" in normalized_formats:
+        written.append(write_json(target / "clusters.sarif", cluster_sarif_payload(result, source_uri=source_uri)))
     return written
 
 
@@ -111,6 +120,51 @@ def render_cluster_markdown(result: AnalysisResult) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_cluster_brief(result: AnalysisResult) -> str:
+    decision = "FIX" if result.metrics.failed else "PASS"
+    if result.metrics.latency_anomalies or result.metrics.cost_anomalies:
+        decision = "INVESTIGATE" if decision == "PASS" else "FIX+INVESTIGATE"
+    lines = [
+        "# Eval Failure Triage Brief",
+        "",
+        f"Decision: {decision}",
+        (
+            "Scope: "
+            f"{result.metrics.failed}/{result.metrics.total} failed "
+            f"({format_percent(result.metrics.failure_rate)}), "
+            f"{len(result.clusters)} clusters, "
+            f"{result.metrics.latency_anomalies} latency anomalies, "
+            f"{result.metrics.cost_anomalies} cost anomalies."
+        ),
+        "",
+        "Top clusters:",
+    ]
+    for cluster in result.clusters[:5]:
+        models = ", ".join(f"{key}={value}" for key, value in sorted(cluster.models.items())[:4]) or "n/a"
+        tags = ", ".join(f"{key}={value}" for key, value in sorted(cluster.tags.items())[:4]) or "n/a"
+        lines.append(
+            f"- {cluster.cluster_id} `{cluster.failure_mode}`: "
+            f"{cluster.size} cases, priority {cluster.priority_score:.3f}, models [{models}], tags [{tags}]"
+        )
+        lines.append(f"  Reason: {cluster.normalized_reason}")
+        if cluster.missing_fields:
+            missing = ", ".join(f"{key}={value}" for key, value in sorted(cluster.missing_fields.items())[:4])
+            lines.append(f"  Missing fields: {missing}")
+        sample = cluster.examples[0] if cluster.examples else None
+        if sample:
+            lines.append(f"  First sample: {sample.case_id}")
+    if not result.clusters:
+        lines.append("- No failure clusters detected.")
+    lines.extend(["", "Agent handoff:"])
+    if result.clusters:
+        lines.append("- Fix the highest-priority cluster first, then rerun evals and compare against the baseline.")
+        lines.append("- Export samples for top clusters with `eval-failure-clusterer sample ...` before editing prompts, retrieval, tools, or datasets.")
+    else:
+        lines.append("- No failure fix is required; continue monitoring latency and cost anomalies.")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def render_compare_markdown(result: CompareResult) -> str:
     lines = [
         "# Eval Comparison",
@@ -185,6 +239,74 @@ def cluster_to_dict(cluster: Any) -> Dict[str, Any]:
                 "cost_usd": item.cost_usd,
             }
             for item in cluster.examples
+        ],
+    }
+
+
+def cluster_sarif_payload(result: AnalysisResult, source_uri: str = "eval-results") -> Dict[str, Any]:
+    rules = {
+        "eval-failure-cluster": {
+            "id": "eval-failure-cluster",
+            "name": "Eval Failure Cluster",
+            "shortDescription": {"text": "Clustered AI eval failures need triage."},
+            "fullDescription": {"text": "One or more LLM eval cases failed with a shared normalized reason, failure mode, or anomaly signal."},
+            "help": {"text": "Inspect sampled cases, fix the highest-priority cluster, and rerun evals before merging."},
+            "defaultConfiguration": {"level": "warning"},
+        }
+    }
+    results = []
+    for cluster in result.clusters:
+        message = (
+            f"{cluster.cluster_id} {cluster.failure_mode}: {cluster.size} failures, "
+            f"priority {cluster.priority_score:.3f}. {cluster.normalized_reason}"
+        )
+        locations = []
+        for example in cluster.examples[:5]:
+            locations.append(
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": source_uri},
+                        "region": {"startLine": 1},
+                    },
+                    "logicalLocations": [{"fullyQualifiedName": example.case_id}],
+                }
+            )
+        results.append(
+            {
+                "ruleId": "eval-failure-cluster",
+                "level": "warning",
+                "message": {"text": message},
+                "locations": locations or [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": source_uri},
+                            "region": {"startLine": 1},
+                        }
+                    }
+                ],
+                "properties": cluster_to_dict(cluster),
+            }
+        )
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "eval-failure-clusterer",
+                        "informationUri": "https://github.com/yanqr213/eval-failure-clusterer",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "results": results,
+                "properties": {
+                    "total": result.metrics.total,
+                    "failed": result.metrics.failed,
+                    "failure_rate": result.metrics.failure_rate,
+                    "cluster_count": len(result.clusters),
+                },
+            }
         ],
     }
 
