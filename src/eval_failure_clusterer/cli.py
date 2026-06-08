@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from .analyzer import analyze_records
 from . import __version__
+from .baseline import load_reviewed_baseline, render_reviewed_baseline, split_reviewed_clusters
 from .checks import collect_check_issues
 from .compare import compare_analysis
 from .config import dump_default_config, load_config
@@ -32,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cluster_parser.set_defaults(func=run_cluster)
 
+    baseline_parser = subparsers.add_parser("baseline", help="Write a reviewed baseline JSON for current failure clusters")
+    baseline_parser.add_argument("input", help="Path to JSONL or CSV eval results")
+    baseline_parser.add_argument("--config", help="Optional config JSON path")
+    baseline_parser.add_argument("--output", default="eval-failure-baseline.json", help="Reviewed baseline JSON output path")
+    baseline_parser.set_defaults(func=run_baseline)
+
     sample_parser = subparsers.add_parser("sample", help="Sample cases from failure clusters")
     sample_parser.add_argument("input", help="Path to JSONL or CSV eval results")
     sample_parser.add_argument("--config", help="Optional config JSON path")
@@ -54,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser = subparsers.add_parser("check", help="Run CI gate checks")
     check_parser.add_argument("input", help="Path to JSONL or CSV eval results")
     check_parser.add_argument("--baseline", help="Optional baseline JSONL or CSV for regression checks")
+    check_parser.add_argument("--reviewed-baseline", help="Reviewed cluster baseline JSON. Matching clusters are suppressed for failed-record gating.")
     check_parser.add_argument("--config", help="Optional config JSON path")
     check_parser.add_argument("--output", default="outputs/check", help="Directory for generated check reports")
     check_parser.add_argument("--check", choices=["warning", "error"], default="error", help="Gate severity")
@@ -84,6 +92,15 @@ def run_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_baseline(args: argparse.Namespace) -> int:
+    result, _ = load_analysis(args.input, args.config)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_reviewed_baseline(result), encoding="utf-8")
+    print(f"Wrote reviewed baseline for {len(result.clusters)} clusters to {output}")
+    return 0
+
+
 def run_compare(args: argparse.Namespace) -> int:
     baseline, config = load_analysis(args.baseline, args.config)
     candidate_records = load_records(args.candidate, config)
@@ -110,8 +127,20 @@ def run_check(args: argparse.Namespace) -> int:
         baseline_records = load_records(args.baseline, config)
         baseline = analyze_records(baseline_records, config)
         compare_result = compare_analysis(baseline, result)
-    issues = collect_check_issues(result, compare_result)
-    write_check_report(result, args.output, compare_result)
+    open_clusters = None
+    suppressed_clusters = []
+    if args.reviewed_baseline:
+        split = split_reviewed_clusters(result, load_reviewed_baseline(args.reviewed_baseline))
+        open_clusters = split["open"]
+        suppressed_clusters = split["suppressed"]
+    issues = collect_check_issues(result, compare_result, open_clusters=open_clusters)
+    write_check_report(
+        result,
+        args.output,
+        compare_result,
+        open_clusters=open_clusters,
+        suppressed_clusters=suppressed_clusters,
+    )
     if issues:
         for issue in issues:
             print(f"ISSUE: {issue}")

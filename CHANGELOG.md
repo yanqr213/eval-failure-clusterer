@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 - 2026-06-08
+
+- Added reviewed baseline JSON generation for accepted eval failure clusters.
+- Added `check --reviewed-baseline` so CI can suppress already-reviewed clusters and fail only on new or unreviewed failures.
+- Added reviewed-baseline metadata to check Markdown and JSON reports.
+- Added tests and CI smoke coverage for baseline generation and consumption.
+- Expanded Chinese and English README documentation for the reviewed-baseline workflow.
+
 ## 0.2.0 - 2026-06-08
 
 - Added `brief` cluster reports for PR comments, reviewer triage, and AI agent handoff.

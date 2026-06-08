@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from eval_failure_clusterer.analyzer import analyze_records
+from eval_failure_clusterer.baseline import render_reviewed_baseline, split_reviewed_clusters
 from eval_failure_clusterer.compare import compare_analysis
 from eval_failure_clusterer.config import load_config
 from eval_failure_clusterer.parser import load_records
@@ -71,3 +72,19 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(len(paths), 2)
             payload = json.loads((Path(tmp) / "check.json").read_text(encoding="utf-8"))
             self.assertIn("compare", payload)
+            self.assertIn("reviewed_baseline", payload)
+
+    def test_write_check_report_includes_suppressed_clusters(self):
+        data = json.loads(render_reviewed_baseline(self.result))
+        split = split_reviewed_clusters(self.result, {data["clusters"][0]["cluster_key"]})
+        with tempfile.TemporaryDirectory() as tmp:
+            write_check_report(
+                self.result,
+                tmp,
+                open_clusters=split["open"],
+                suppressed_clusters=split["suppressed"],
+            )
+            payload = json.loads((Path(tmp) / "check.json").read_text(encoding="utf-8"))
+            self.assertEqual(1, payload["reviewed_baseline"]["suppressed_cluster_count"])
+            text = (Path(tmp) / "check.md").read_text(encoding="utf-8")
+            self.assertIn("Suppressed by reviewed baseline", text)

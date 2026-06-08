@@ -26,6 +26,7 @@ LLM 应用的 eval 结果往往分散在 JSONL、CSV、CI artifact、日志导�
 - 导出 brief / Markdown / JSON / CSV / JUnit / SARIF 报告。
 - 生成样例包，便于修复和复现。
 - 支持 CI gate，返回 warning 或 error。
+- 支持 reviewed baseline，把已审阅历史失败登记为 JSON，让 CI 只拦截新增或未审阅失败 cluster；延迟、成本和显式 baseline 对比回归仍会照常报告。
 
 ## 安装
 
@@ -79,6 +80,8 @@ eval-failure-clusterer cluster examples/eval_results.jsonl --output outputs/demo
 eval-failure-clusterer cluster examples/eval_results.jsonl --format brief,sarif --output outputs/triage
 eval-failure-clusterer sample examples/eval_results.jsonl --output outputs/demo/samples --max-per-cluster 2
 eval-failure-clusterer compare examples/baseline_eval.jsonl examples/eval_results.jsonl --output outputs/demo/compare
+eval-failure-clusterer baseline examples/eval_results.jsonl --output eval-failure-baseline.json
+eval-failure-clusterer check examples/eval_results.jsonl --reviewed-baseline eval-failure-baseline.json --output outputs/demo/check --check error
 eval-failure-clusterer check examples/eval_results.jsonl --output outputs/demo/check --check error
 ```
 
@@ -117,6 +120,14 @@ eval-failure-clusterer compare BASELINE CANDIDATE [--config config.json] [--outp
 
 输出 baseline 与 candidate 的整体指标变化、cluster 级别回归、异常变化和新增失败类型。
 
+### `baseline`
+
+```bash
+eval-failure-clusterer baseline INPUT [--config config.json] [--output eval-failure-baseline.json]
+```
+
+生成 reviewed baseline JSON。这个文件用于记录“已经人工审阅并暂时接受”的历史失败 cluster，包含稳定 `cluster_key`、失败模式、规范化原因、指纹、样例 case、模型和标签分布。建议像维护安全例外一样 review、提交和定期清理。
+
 ### `init-config`
 
 ```bash
@@ -128,13 +139,30 @@ eval-failure-clusterer init-config [PATH]
 ### `check`
 
 ```bash
-eval-failure-clusterer check INPUT [--config config.json] [--output DIR] [--check warning|error]
+eval-failure-clusterer check INPUT [--config config.json] [--baseline previous.jsonl] [--reviewed-baseline reviewed.json] [--output DIR] [--check warning|error]
 ```
 
 适合 CI 使用：
 
 - `warning`: 输出检查结果，进程退出码为 `0`
 - `error`: 若发现失败、回归或异常，进程退出码为 `2`
+
+`--baseline` 是 baseline/candidate 数据集对比，用来发现回归；`--reviewed-baseline` 是已审阅 cluster 例外，用来抑制历史已接受失败。两者可以同时使用。reviewed baseline 只抑制失败 cluster 门禁，不会隐藏延迟异常、成本异常或显式数据集对比回归。
+
+典型 reviewed baseline 接入方式：
+
+```bash
+# 首次接入：生成并人工审阅
+eval-failure-clusterer baseline eval-results.jsonl --output eval-failure-baseline.json
+
+# 后续 CI：消费已提交的 reviewed baseline
+eval-failure-clusterer check eval-results.jsonl \
+  --reviewed-baseline eval-failure-baseline.json \
+  --check error \
+  --output build/eval-check
+```
+
+不要在同一个阻断型 CI run 中先生成 baseline 再消费它，否则当前失败 cluster 会被直接接受。首次接入时应生成文件、review diff、提交 baseline，然后在后续 run 中使用。
 
 ## 配置文件
 
@@ -153,7 +181,8 @@ eval-failure-clusterer check INPUT [--config config.json] [--output DIR] [--chec
 2. 使用 `cluster` 看失败是否集中在几类问题。
 3. 使用 `sample` 给研发、prompt 工程或数据标注同学提供最小复现集。
 4. 使用 `compare` 和上一个稳定版本对比，确认是否出现新回归。
-5. 在 CI 中运行 `check --check error`，阻止明显退化进入主分支。
+5. 首次接入已有失败集时，生成 `baseline` 并人工审阅，避免历史失败阻塞所有后续改动。
+6. 在 CI 中运行 `check --reviewed-baseline ... --check error`，阻止新增或未审阅失败进入主分支。
 
 ## CI 示例
 
@@ -172,7 +201,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install .
-      - run: eval-failure-clusterer check examples/eval_results.jsonl --check error --output build/eval-check
+      - run: eval-failure-clusterer check examples/eval_results.jsonl --reviewed-baseline eval-failure-baseline.json --check error --output build/eval-check
       - run: eval-failure-clusterer cluster examples/eval_results.jsonl --format sarif --output build/eval-sarif
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -193,6 +222,7 @@ jobs:
 - 对高度结构化或超短文本失败原因，字段规则归一化通常比指纹更重要。
 - 延迟和成本异常是分布式阈值检测，不是严格统计检验。
 - baseline compare 依赖输入字段稳定，若 case id 大量变化会降低对比精度。
+- reviewed baseline 是审计文件，不是永久忽略规则；输入字段或规范化逻辑大幅变化时需要重新审阅。
 
 ## English
 
@@ -203,6 +233,7 @@ Main commands:
 - `cluster`
 - `sample`
 - `compare`
+- `baseline`
 - `init-config`
 - `check`
 
@@ -213,6 +244,7 @@ Typical outputs:
 - JSON / CSV for downstream tooling
 - JUnit XML for CI dashboards
 - SARIF 2.1.0 for GitHub Code Scanning
+- Reviewed baseline JSON for accepted historical failure clusters
 
 See `examples/` for runnable sample data.
 
@@ -223,3 +255,18 @@ eval-failure-clusterer cluster examples/eval_results.jsonl \
   --format brief,markdown,json,csv,junit,sarif \
   --output outputs/eval-triage
 ```
+
+Reviewed baseline workflow:
+
+```bash
+# Generate once, review, then commit.
+eval-failure-clusterer baseline eval-results.jsonl --output eval-failure-baseline.json
+
+# Later CI runs fail on new or unreviewed failure clusters.
+eval-failure-clusterer check eval-results.jsonl \
+  --reviewed-baseline eval-failure-baseline.json \
+  --check error \
+  --output build/eval-check
+```
+
+`--baseline` compares a previous eval dataset with a candidate dataset. `--reviewed-baseline` consumes a reviewed exception file for accepted historical failure clusters. They solve different problems and can be used together. Reviewed baselines suppress the failure-cluster gate only; latency anomalies, cost anomalies, and explicit dataset regressions remain visible.

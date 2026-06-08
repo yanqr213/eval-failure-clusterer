@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
-from .models import AnalysisResult, CompareResult
+from .models import AnalysisResult, Cluster, CompareResult
 from .utils import ensure_output_dir, format_percent
 
 
@@ -71,11 +71,27 @@ def write_sample_reports(samples: List[Dict[str, Any]], output_dir: str) -> List
     ]
 
 
-def write_check_report(result: AnalysisResult, output_dir: str, compare_result: Optional[CompareResult] = None) -> List[Path]:
+def write_check_report(
+    result: AnalysisResult,
+    output_dir: str,
+    compare_result: Optional[CompareResult] = None,
+    *,
+    open_clusters: Optional[List[Cluster]] = None,
+    suppressed_clusters: Optional[List[Cluster]] = None,
+) -> List[Path]:
     target = ensure_output_dir(output_dir)
+    open_items = result.clusters if open_clusters is None else open_clusters
+    suppressed_items = suppressed_clusters or []
     payload: Dict[str, Any] = {
         "metrics": result.metrics.__dict__,
         "clusters": [cluster_to_dict(cluster) for cluster in result.clusters],
+        "reviewed_baseline": {
+            "open_cluster_count": len(open_items),
+            "suppressed_cluster_count": len(suppressed_items),
+            "open_failed_records": sum(cluster.size for cluster in open_items),
+            "suppressed_failed_records": sum(cluster.size for cluster in suppressed_items),
+            "suppressed_clusters": [cluster_to_dict(cluster) for cluster in suppressed_items],
+        },
     }
     if compare_result:
         payload["compare"] = {
@@ -84,7 +100,15 @@ def write_check_report(result: AnalysisResult, output_dir: str, compare_result: 
             "case_changes": compare_result.case_changes,
         }
     return [
-        write_text(target / "check.md", render_check_markdown(result, compare_result)),
+        write_text(
+            target / "check.md",
+            render_check_markdown(
+                result,
+                compare_result,
+                open_clusters=list(open_items),
+                suppressed_clusters=suppressed_items,
+            ),
+        ),
         write_json(target / "check.json", payload),
     ]
 
@@ -201,11 +225,21 @@ def render_samples_markdown(samples: List[Dict[str, Any]]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_check_markdown(result: AnalysisResult, compare_result: Optional[CompareResult]) -> str:
+def render_check_markdown(
+    result: AnalysisResult,
+    compare_result: Optional[CompareResult],
+    *,
+    open_clusters: Optional[List[Cluster]] = None,
+    suppressed_clusters: Optional[List[Cluster]] = None,
+) -> str:
+    open_items = result.clusters if open_clusters is None else open_clusters
+    suppressed_items = suppressed_clusters or []
     lines = [
         "# Eval Gate Check",
         "",
         f"- Failed records: {result.metrics.failed}",
+        f"- Open failed records: {sum(cluster.size for cluster in open_items)}",
+        f"- Suppressed by reviewed baseline: {sum(cluster.size for cluster in suppressed_items)} records in {len(suppressed_items)} clusters",
         f"- Latency anomalies: {result.metrics.latency_anomalies}",
         f"- Cost anomalies: {result.metrics.cost_anomalies}",
     ]

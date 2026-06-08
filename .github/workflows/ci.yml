@@ -25,4 +25,7 @@ jobs:
           eval-failure-clusterer cluster examples/eval_results.jsonl --format sarif --output build/sarif
           python -m json.tool build/sarif/clusters.sarif > /dev/null
           eval-failure-clusterer compare examples/baseline_eval.jsonl examples/eval_results.jsonl --output build/compare
+          eval-failure-clusterer baseline examples/eval_results.jsonl --output build/reviewed-baseline.json
+          python -m json.tool build/reviewed-baseline.json > /dev/null
+          eval-failure-clusterer check examples/eval_results.jsonl --reviewed-baseline build/reviewed-baseline.json --output build/reviewed-check --check error || test $? -eq 2
           eval-failure-clusterer check examples/eval_results.jsonl --output build/check --check error || test $? -eq 2

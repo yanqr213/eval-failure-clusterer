@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
-from .models import AnalysisResult, CompareResult
+from .models import AnalysisResult, Cluster, CompareResult
 
 
-def collect_check_issues(result: AnalysisResult, compare_result: Optional[CompareResult] = None) -> List[str]:
+def collect_check_issues(
+    result: AnalysisResult,
+    compare_result: Optional[CompareResult] = None,
+    *,
+    open_clusters: Optional[Sequence[Cluster]] = None,
+) -> List[str]:
     issues: List[str] = []
-    if result.metrics.failed:
-        issues.append(f"{result.metrics.failed} failed records detected")
+    clusters = list(result.clusters if open_clusters is None else open_clusters)
+    open_failed = sum(cluster.size for cluster in clusters)
+    if open_failed:
+        if open_clusters is None:
+            issues.append(f"{open_failed} failed records detected")
+        else:
+            issues.append(f"{open_failed} unreviewed failed records detected across {len(clusters)} clusters")
     if result.metrics.latency_anomalies:
         issues.append(f"{result.metrics.latency_anomalies} latency anomalies detected")
     if result.metrics.cost_anomalies:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eval-failure-clusterer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Offline CLI for clustering AI eval failures and generating actionable reports."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -12,7 +12,7 @@ license = {text = "MIT"}
 authors = [
   {name = "OpenAI Codex"}
 ]
-keywords = ["ai-eval", "llm", "testing", "quality", "cli", "offline"]
+keywords = ["ai-eval", "llm", "testing", "quality", "cli", "offline", "baseline"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",

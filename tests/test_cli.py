@@ -22,7 +22,7 @@ class CLITests(unittest.TestCase):
     def test_version(self):
         result = self.run_cli("--version")
         self.assertEqual(result.returncode, 0)
-        self.assertIn("eval-failure-clusterer 0.2.0", result.stdout)
+        self.assertIn("eval-failure-clusterer 0.3.0", result.stdout)
 
     def test_init_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -37,6 +37,15 @@ class CLITests(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertTrue((Path(tmp) / "cluster" / "brief.md").exists())
             self.assertTrue((Path(tmp) / "cluster" / "clusters.json").exists())
+
+    def test_baseline_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "reviewed-baseline.json"
+            result = self.run_cli("baseline", "examples/eval_results.jsonl", "--output", str(output))
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertIn("clusters", payload)
+            self.assertGreater(payload["cluster_count"], 0)
 
     def test_cluster_sarif_format(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -105,3 +114,35 @@ class CLITests(unittest.TestCase):
                 "error",
             )
             self.assertEqual(result.returncode, 2)
+
+    def test_check_with_reviewed_baseline_suppresses_failed_cluster_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_path = Path(tmp) / "eval.jsonl"
+            input_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"id": "case-1", "status": "fail", "error": "Expected citation field missing", "model": "gpt-test"}),
+                        json.dumps({"id": "case-2", "status": "pass", "model": "gpt-test"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            baseline = Path(tmp) / "baseline.json"
+            baseline_result = self.run_cli("baseline", str(input_path), "--output", str(baseline))
+            self.assertEqual(baseline_result.returncode, 0, baseline_result.stderr)
+
+            result = self.run_cli(
+                "check",
+                str(input_path),
+                "--reviewed-baseline",
+                str(baseline),
+                "--output",
+                str(Path(tmp) / "check"),
+                "--check",
+                "error",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads((Path(tmp) / "check" / "check.json").read_text(encoding="utf-8"))
+            self.assertEqual(1, payload["reviewed_baseline"]["suppressed_cluster_count"])
